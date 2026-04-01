@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced IPC Debugger</title>
+    <style>
+        :root {
+            --dark-bg: #1a1a2e;
+            --process-color: #4cc9f0;
+            --pipe-color: #f72585;
+            --queue-color: #7209b7;
+            --memory-color: #3a0ca3;
+            --success-color: #4ade80;
+            --error-color: #f87171;
+            --warning-color: #fbbf24;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            text-align: center;
+            background: var(--dark-bg);
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .heading {
+            color: var(--process-color);
+            font-size: 2.5em;
+            margin: 20px 0;
+            text-shadow: 0 0 10px rgba(76, 201, 240, 0.5);
+        }
+
+        .container {
+            margin: 30px auto;
+            width: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .ipc-row {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 15px 0;
+            width: 100%;
+        }
+
+        .process {
+            width: 120px;
+            height: 120px;
+            border-radius: 15px;
+            margin: 0 20px;
+            padding: 15px;
+            background: var(--process-color);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 4px 15px rgba(76, 201, 240, 0.3);
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .process::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                to bottom right,
+                rgba(255, 255, 255, 0.3),
+                rgba(255, 255, 255, 0)
+            );
+            transform: rotate(30deg);
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .process:hover::before {
+            opacity: 1;
+        }
+
+        .process-id {
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .process-status {
+            font-size: 0.8em;
+            opacity: 0.8;
+        }
+
+        .ipc-mechanism {
+            width: 180px;
+            height: 70px;
+            border-radius: 10px;
+            margin: 0 20px;
+            padding: 10px;
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .pipe {
+            background: var(--pipe-color);
+        }
+
+        .queue {
+            background: var(--queue-color);
+        }
+
+        .memory {
+            background: var(--memory-color);
+        }
+
+        .connection-line {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            flex-grow: 1;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .connection-line::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 100%;
+            background: linear-gradient(to right, transparent, #fff, transparent);
+            transition: width 0.5s ease;
+        }
+
+        .active-line .connection-line::after {
+            width: 100%;
+        }
+
+        .controls {
+            margin: 30px 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        button {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            background: #3a3a5e;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            position: relative;
+            overflow: hidden;
+        }
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                90deg,
+                transparent,
+                rgba(255, 255, 255, 0.2),
+                transparent
+            );
+            transition: all 0.5s;
+        }
+
+        button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        .simulate-btn {
+            background: var(--process-color);
+        }
+
+        .deadlock-btn {
+            background: var(--warning-color);
+            color: #333;
+        }
+
+        .log-container {
+            width: 80%;
+            margin: 30px auto;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+
+        .log-header {
+            background: #2d2d42;
+            padding: 10px;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log {
+            height: 200px;
+            padding: 15px;
+            background: #252538;
+            overflow-y: auto;
+            text-align: left;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+        }
+
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 8px 12px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+        }
+
+        .log-time {
+            color: #aaa;
+            margin-right: 15px;
+            font-size: 0.9em;
+        }
+
+        .log-message {
+            flex-grow: 1;
+        }
+
+        .log-pipe {
+            border-left: 3px solid var(--pipe-color);
+        }
+
+        .log-queue {
+            border-left: 3px solid var(--queue-color);
+        }
+
+        .log-memory {
+            border-left: 3px solid var(--memory-color);
+        }
+
+        .log-success {
+            border-left: 3px solid var(--success-color);
+        }
+
+        .log-error {
+            border-left: 3px solid var(--error-color);
+        }
+
+        .log-warning {
+            border-left: 3px solid var(--warning-color);
+        }
+
+        .clear-log {
+            background: none;
+            border: none;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 0.9em;
+            padding: 5px;
+        }
+
+        .clear-log:hover {
+            color: white;
+        }
+
+        .stats-panel {
+            width: 80%;
+            margin: 20px auto;
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .stat-card {
+            background: #2d2d42;
+            border-radius: 10px;
+            padding: 15px;
+            min-width: 150px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-title {
+            font-size: 0.9em;
+            color: #aaa;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        .active {
+            animation: pulse 1s infinite alternate;
+        }
+
+        @keyframes pulse {
+            from {
+                box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            }
+            to {
+                box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: #2d2d42;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 80%;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #aaa;
+        }
+
+        .close-modal:hover {
+            color: white;
+        }
+
+        .deadlock-graph {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .graph-node {
+            display: inline-block;
+            padding: 5px 10px;
+            margin: 5px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .graph-process {
+            background: var(--process-color);
+        }
+
+        .graph-resource {
+            background: var(--queue-color);
+        }
+
+        .graph-arrow {
+            display: inline-block;
+            margin: 0 5px;
+            color: #aaa;
+        }
+
+        .deadlock-cycle {
+            color: var(--error-color);
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #444;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            border-bottom: 3px solid var(--process-color);
+            color: var(--process-color);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .process-details {
+            text-align: left;
+            margin-top: 15px;
+        }
+
+        .detail-row {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .detail-label {
+            width: 120px;
+            color: #aaa;
+        }
+
+        .detail-value {
+            flex-grow: 1;
+        }
+
+        .progress-bar {
+            height: 10px;
+            background: #444;
+            border-radius: 5px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--process-color);
+            width: 0%;
+            transition: width 0.5s;
+        }
+    </style>
+</head>
+
+<body>
+    <h1 class="heading">IPC Debugger</h1>
+
+    <div class="container">
+        <!-- First IPC Row: Process 1 ↔ Pipe ↔ Process 2 -->
+        <div class="ipc-row">
+            <div class="process" id="p1">
+                <div class="process-id">P1</div>
+                <div class="process-status">Ready</div>
+            </div>
+            <div class="connection-line"></div>
+            <div class="ipc-mechanism pipe" id="pipe">Pipe</div>
+            <div class="connection-line"></div>
+            <div class="process" id="p2">
+                <div class="process-id">P2</div>
+                <div class="process-status">Ready</div>
+            </div>
+        </div>
+
+        <!-- Second IPC Row: Process 3 ↔ Queue ↔ Process 4 -->
+        <div class="ipc-row">
+            <div class="process" id="p3">
+                <div class="process-id">P3</div>
+                <div class="process-status">Ready</div>
+            </div>
+            <div class="connection-line"></div>
+            <div class="ipc-mechanism queue" id="queue">Message Queue</div>
+            <div class="connection-line"></div>
+            <div class="process" id="p4">
+                <div class="process-id">P4</div>
+                <div class="process-status">Ready</div>
+            </div>
+        </div>
+
+        <!-- Third IPC Row: Process 5 ↔ Shared Memory ↔ Process 6 -->
+        <div class="ipc-row">
+            <div class="process" id="p5">
+                <div class="process-id">P5</div>
+                <div class="process-status">Ready</div>
+            </div>
+            <div class="connection-line"></div>
+            <div class="ipc-mechanism memory" id="memory">Shared Memory</div>
+            <div class="connection-line"></div>
+            <div class="process" id="p6">
+                <div class="process-id">P6</div>
+                <div class="process-status">Ready</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="simulate-btn" onclick="simulatePipe()">Simulate Pipe</button>
+        <button class="simulate-btn" onclick="simulateQueue()">Simulate Queue</button>
+        <button class="simulate-btn" onclick="simulateMemory()">Simulate Memory</button>
+        <button class="deadlock-btn" onclick="detectDeadlock()">Check Deadlock</button>
+        <button onclick="showProcessDetails()">Process Details</button>
+        <button onclick="resetSimulation()">Reset All</button>
+    </div>
+
+    <div class="stats-panel">
+        <div class="stat-card">
+            <div class="stat-title">Processes</div>
+            <div class="stat-value" id="process-count">6</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">IPC Mechanisms</div>
+            <div class="stat-value" id="ipc-count">3</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Messages Sent</div>
+            <div class="stat-value" id="message-count">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Deadlocks</div>
+            <div class="stat-value" id="deadlock-count">0</div>
+        </div>
+    </div>
+
+    <div class="log-container">
+        <div class="log-header">
+            <span>System Log</span>
+            <button class="clear-log" onclick="clearLog()">Clear Log</button>
+        </div>
+        <div class="log" id="log"></div>
+    </div>
+
+    <!-- Deadlock Detection Modal -->
+    <div class="modal" id="deadlock-modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('deadlock-modal')">&times;</span>
+            <h2>Deadlock Analysis</h2>
+            <div id="deadlock-result"></div>
+            <div class="deadlock-graph" id="deadlock-graph"></div>
+            <div class="deadlock-cycle" id="deadlock-cycle"></div>
+        </div>
+    </div>
+
+    <!-- Process Details Modal -->
+    <div class="modal" id="process-modal">
+        <div class="modal-content">
+            <span class="close-modal" onclick="closeModal('process-modal')">&times;</span>
+            <h2>Process Details</h2>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="switchTab('p1-details')">P1</div>
+                <div class="tab" onclick="switchTab('p2-details')">P2</div>
+                <div class="tab" onclick="switchTab('p3-details')">P3</div>
+                <div class="tab" onclick="switchTab('p4-details')">P4</div>
+                <div class="tab" onclick="switchTab('p5-details')">P5</div>
+                <div class="tab" onclick="switchTab('p6-details')">P6</div>
+            </div>
+            
+            <div class="tab-content active" id="p1-details">
+                <div class="process-details">
+                    <div class="detail-row">
+                        <div class="detail-label">PID:</div>
+                        <div class="detail-value">1001</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Status:</div>
+                        <div class="detail-value">Ready</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Memory Usage:</div>
+                        <div class="detail-value">
+                            <div>128 MB / 512 MB</div>
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: 25%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">IPC Usage:</div>
+                        <div class="detail-value">Pipe</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Similar content for other processes (P2-P6) -->
+            <div class="tab-content" id="p2-details">
+                <!-- P2 details would go here -->
+            </div>
+            
+            <!-- Additional tab contents would be here -->
+        </div>
+    </div>
+
+    <script>
+        // Message counter
+        let messageCount = 0;
+        let deadlockCount = 0;
+        
+        // Resource graph for deadlock detection
+        let resourceGraph = {
+            "p1": ["pipe"],
+            "pipe": ["p2"],
+            "p3": ["queue"],
+            "queue": ["p4"],
+            "p5": ["memory"],
+            "memory": ["p6"],
+            "p6": ["p5"] // This creates a cycle for deadlock demonstration
+        };
+
+        // Enhanced logging function with timestamps and message types
+        function logMessage(message, type = "info") {
+            const log = document.getElementById("log");
+            const now = new Date();
+            const timeString = now.toLocaleTimeString();
+            
+            const logEntry = document.createElement("div");
+            logEntry.className = `log-entry log-${type}`;
+            
+            logEntry.innerHTML = `
+                <div class="log-time">${timeString}</div>
+                <div class="log-message">${message}</div>
+            `;
+            
+            log.appendChild(logEntry);
+            log.scrollTop = log.scrollHeight;
+            
+            // Update message counter
+            if (type !== "info") {
+                messageCount++;
+                document.getElementById("message-count").textContent = messageCount;
+            }
+        }
+
+        // Enhanced element highlighting with connection animation
+        function highlightElement(id) {
+            const element = document.getElementById(id);
+            element.classList.add("active");
+            
+            // Highlight connection lines
+            const row = element.closest(".ipc-row");
+            if (row) {
+                row.classList.add("active-line");
+                setTimeout(() => {
+                    row.classList.remove("active-line");
+                }, 1000);
+            }
+            
+            setTimeout(() => {
+                element.classList.remove("active");
+            }, 1000);
+        }
+
+        // IPC Simulation Functions
+        function simulatePipe() {
+            logMessage("[PIPE] Process P1 sending data to pipe...", "pipe");
+            highlightElement("p1");
+            highlightElement("pipe");
+            
+            setTimeout(() => {
+                highlightElement("p2");
+                logMessage("[PIPE] Data received by Process P2", "success");
+                
+                // Update process status
+                document.querySelector("#p1 .process-status").textContent = "Waiting";
+                document.querySelector("#p2 .process-status").textContent = "Running";
+                
+                setTimeout(() => {
+                    document.querySelector("#p1 .process-status").textContent = "Ready";
+                    document.querySelector("#p2 .process-status").textContent = "Ready";
+                }, 1500);
+            }, 1000);
+        }
+
+        function simulateQueue() {
+            logMessage("[QUEUE] Process P3 enqueueing message...", "queue");
+            highlightElement("p3");
+            highlightElement("queue");
+            
+            setTimeout(() => {
+                highlightElement("p4");
+                logMessage("[QUEUE] Message dequeued by Process P4", "success");
+                
+                // Update process status
+                document.querySelector("#p3 .process-status").textContent = "Waiting";
+                document.querySelector("#p4 .process-status").textContent = "Running";
+                
+                setTimeout(() => {
+                    document.querySelector("#p3 .process-status").textContent = "Ready";
+                    document.querySelector("#p4 .process-status").textContent = "Ready";
+                }, 1500);
+            }, 1500);
+        }
+
+        function simulateMemory() {
+            logMessage("[MEMORY] Process P5 writing to shared memory...", "memory");
+            highlightElement("p5");
+            highlightElement("memory");
+            
+            setTimeout(() => {
+                highlightElement("p6");
+                logMessage("[MEMORY] Process P6 reading from shared memory", "success");
+                
+                // Update process status
+                document.querySelector("#p5 .process-status").textContent = "Waiting";
+                document.querySelector("#p6 .process-status").textContent = "Running";
+                
+                setTimeout(() => {
+                    document.querySelector("#p5 .process-status").textContent = "Ready";
+                    document.querySelector("#p6 .process-status").textContent = "Ready";
+                }, 1500);
+            }, 2000);
+        }
+
+        // Deadlock detection with visual graph
+        function detectDeadlock() {
+            let visited = new Set();
+            let stack = new Set();
+            let cycle = null;
+
+            function isCyclic(node, path = []) {
+                if (stack.has(node)) {
+                    cycle = [...path, node];
+                    return true;
+                }
+                if (visited.has(node)) return false;
+
+                visited.add(node);
+                stack.add(node);
+                path.push(node);
+
+                for (let neighbor of (resourceGraph[node] || [])) {
+                    if (isCyclic(neighbor, path)) return true;
+                }
+
+                stack.delete(node);
+                path.pop();
+                return false;
+            }
+
+            let deadlockFound = false;
+            for (let node in resourceGraph) {
+                if (isCyclic(node)) {
+                    deadlockFound = true;
+                    break;
+                }
+            }
+
+            const modal = document.getElementById("deadlock-modal");
+            const resultDiv = document.getElementById("deadlock-result");
+            const graphDiv = document.getElementById("deadlock-graph");
+            const cycleDiv = document.getElementById("deadlock-cycle");
+
+            if (deadlockFound) {
+                deadlockCount++;
+                document.getElementById("deadlock-count").textContent = deadlockCount;
+                
+                resultDiv.innerHTML = '<div style="color: var(--error-color); font-weight: bold;">⚠️ Deadlock Detected!</div>';
+                logMessage("Deadlock detected in the system!", "error");
+                
+                // Visualize the graph
+                graphDiv.innerHTML = "";
+                for (let node in resourceGraph) {
+                    const nodeElement = document.createElement("div");
+                    nodeElement.className = `graph-node ${node.startsWith('p') ? 'graph-process' : 'graph-resource'}`;
+                    nodeElement.textContent = node;
+                    graphDiv.appendChild(nodeElement);
+                    
+                    resourceGraph[node].forEach(neighbor => {
+                        const arrow = document.createElement("span");
+                        arrow.className = "graph-arrow";
+                        arrow.textContent = "→";
+                        graphDiv.appendChild(arrow);
+                        
+                        const neighborElement = document.createElement("div");
+                        neighborElement.className = `graph-node ${neighbor.startsWith('p') ? 'graph-process' : 'graph-resource'}`;
+                        neighborElement.textContent = neighbor;
+                        graphDiv.appendChild(neighborElement);
+                        
+                        // Add line break after each connection
+                        graphDiv.appendChild(document.createElement("br"));
+                    });
+                }
+                
+                // Show the cycle
+                if (cycle) {
+                    cycleDiv.textContent = `Deadlock cycle: ${cycle.join(" → ")}`;
+                }
+            } else {
+                resultDiv.innerHTML = '<div style="color: var(--success-color); font-weight: bold;">✅ No Deadlock Detected</div>';
+                cycleDiv.textContent = "";
+                graphDiv.innerHTML = "Resource graph contains no cycles.";
+                logMessage("No deadlock detected in the system.", "success");
+            }
+            
+            modal.style.display = "flex";
+        }
+
+        // Process details modal
+        function showProcessDetails() {
+            document.getElementById("process-modal").style.display = "flex";
+        }
+
+        // Tab switching
+        function switchTab(tabId) {
+            // Hide all tab contents
+            document.querySelectorAll(".tab-content").forEach(tab => {
+                tab.classList.remove("active");
+            });
+            
+            // Deactivate all tabs
+            document.querySelectorAll(".tab").forEach(tab => {
+                tab.classList.remove("active");
+            });
+            
+            // Activate selected tab
+            document.getElementById(tabId).classList.add("active");
+            event.currentTarget.classList.add("active");
+        }
+
+        // Modal controls
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = "none";
+        }
+
+        // Clear log
+        function clearLog() {
+            document.getElementById("log").innerHTML = "";
+        }
+
+        // Reset simulation
+        function resetSimulation() {
+            // Reset process statuses
+            document.querySelectorAll(".process-status").forEach(status => {
+                status.textContent = "Ready";
+            });
+            
+            // Reset counters
+            messageCount = 0;
+            deadlockCount = 0;
+            document.getElementById("message-count").textContent = "0";
+            document.getElementById("deadlock-count").textContent = "0";
+            
+            // Clear log
+            clearLog();
+            
+            logMessage("System reset completed.", "info");
+        }
+
+        // Initialize
+        logMessage("IPC Debugger initialized. Ready to simulate IPC mechanisms.", "info");
+    </script>
+</body>
+</html>
