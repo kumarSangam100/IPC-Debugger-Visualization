@@ -365,10 +365,6 @@ No installation or dependencies required.
 
 ---
 
-## 📸 Screenshots
-
-Add screenshots here for better project presentation.
-
 Example:
 
 ```text
